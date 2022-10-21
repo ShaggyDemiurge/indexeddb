@@ -79,25 +79,42 @@ public open class Transaction internal constructor(
         wrap: (U) -> T,
     ): Flow<T> = callbackFlow {
         var cursorStartAction = cursorStart
+        console.log("Cursor start action = $cursorStartAction\n")
         val request = open(query, direction).request
         val onSuccess: (Event) -> Unit = { event ->
+            console.log("Request::onSuccess\n")
             @Suppress("UNCHECKED_CAST")
             val cursor = (event.target as IDBRequest<U?>).result
+            console.log("Cursor with primary key ${cursor?.primaryKey}\n")
             if (cursorStartAction != null && cursor != null) {
+                console.log("not null cursor start action $cursorStartAction, applying\n")
                 cursorStartAction?.apply(cursor)
                 cursorStartAction = null
             } else if (cursor != null) {
                 val result = trySend(wrap(cursor))
                 when {
-                    result.isSuccess -> cursor.`continue`()
-                    result.isFailure -> channel.close(IllegalStateException("Send failed. Did you suspend illegally?"))
-                    result.isClosed -> channel.close()
+                    result.isSuccess -> {
+                        console.log("sending is successful \n")
+                        cursor.`continue`()
+                    }
+                    result.isFailure -> {
+                        console.log("Sending with failure. Closing \n")
+                        channel.close(IllegalStateException("Send failed. Did you suspend illegally?"))
+                    }
+                    result.isClosed -> {
+                        console.log("Sending into closed channel. Closing \n")
+                        channel.close()
+                    }
                 }
             } else {
+                console.log("Cursor is null, closing \n")
                 channel.close()
             }
         }
-        val onError: (Event) -> Unit = { event -> channel.close(ErrorEventException(event)) }
+        val onError: (Event) -> Unit = { event ->
+            console.log("Error while retrieving cursor ${event}\n")
+            channel.close(ErrorEventException(event))
+        }
         request.addEventListener("success", onSuccess)
         request.addEventListener("error", onError)
         awaitClose {
